@@ -75,6 +75,23 @@ function flatten(parts) {
     return flatList;
 }
 
+function createPlaneHelper(normal, distance, size, color) {
+    const planeGeom = new THREE.PlaneGeometry(size, size);
+    const planeMat = new THREE.MeshStandardMaterial({
+        color: color,
+        metalness: 0.1,
+        roughness: 0.75,
+        opacity: 0.5,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    const plane = new THREE.Mesh(planeGeom, planeMat);
+    plane.renderOrder = 100 + Math.random() * 0.1;
+    plane.lookAt(normal);
+    plane.position.copy(normal.clone().multiplyScalar(distance));
+    return plane;
+}
+
 class Clipping {
 
     constructor(center, size, distance, uiCallback, theme, nestedGroup, scene) {
@@ -89,14 +106,17 @@ class Clipping {
 
         this.clipPlanes = [];
         this.clipAxis = [];
+        this.planeHelpers = new THREE.Group();
+        this.helpers = [];
 
         for (var i = 0; i < 3; i++) {
             this.clipPlanes.push(new THREE.Plane(normals[i], distance));
             this.clipAxis.push({ stencils: [] });
             this.uiCallback(i, normals[i].toArray());
+            this.helpers.push(createPlaneHelper(normals[i], distance, size, 0xeeeeee));
+            this.planeHelpers.add(this.helpers[i]);
         }
 
-        let object = new THREE.Object3D();
         let stencilGroup = new THREE.Group();
 
         let parts = flatten(nestedGroup.shapes.parts);
@@ -104,10 +124,13 @@ class Clipping {
         for (let part of parts) {
 
             let shape = part.shape;
-            let geometry = ShapeToBufferGeometry(shape);
-            for (let i = 0; i < 3; i++) {
-                const plane = this.clipPlanes[i];
-                stencilGroup = createPlaneStencilGroup(geometry, plane, i + 1, stencilGroup);
+            let geometry;
+            try {
+                geometry = ShapeToBufferGeometry(shape);
+            } catch (e) {
+                console.error(e);
+                console.error("Failed to create geometry for part", part);
+                continue;
             }
 
             const planeGeom = new THREE.PlaneGeometry(size, size);
@@ -118,7 +141,8 @@ class Clipping {
                 const plane = this.clipPlanes[i];
                 const otherPlanes = this.clipPlanes.filter((_, j) => j !== i);
 
-                // plane is clipped by the other clipping planes
+                stencilGroup = createPlaneStencilGroup(geometry, plane, i + 1, stencilGroup);
+
                 const planeMat =
                     new THREE.MeshStandardMaterial({
 
@@ -150,19 +174,22 @@ class Clipping {
                 scene.add(poGroup);
             }
         }
-        object.add(stencilGroup);
 
-        this.planeHelpers = object;
         this.clippedFaces = stencilGroup;
+        console.log(this.clipAxis);
     }
 
 
     setConstant(index, value) {
         this.clipPlanes[index].constant = value;
+
+        const direction = this.clipPlanes[index].normal.clone();
+        const newPos = direction.multiplyScalar(-value);
+
+        this.helpers[index].position.copy(newPos);
+
         for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
-            this.clipAxis[index].stencils[i].position
-                .copy(this.clipPlanes[index].normal)
-                .multiplyScalar(-value);
+            this.clipAxis[index].stencils[i].position.copy(newPos);
         }
     }
 
