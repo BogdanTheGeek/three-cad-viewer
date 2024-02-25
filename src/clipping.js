@@ -69,7 +69,7 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group, loc) {
     return group;
 }
 
-function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 0]]) {
+function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 1]]) {
     let flatList = [];
     for (let part of parts) {
         if (part.hasOwnProperty("parts")) {
@@ -198,16 +198,32 @@ class Clipping {
         const direction = this.clipPlanes[index].normal.clone();
         const newPos = direction.multiplyScalar(-value);
 
+        const planeOrientation = newPos.clone().add(direction);
+
         this.helpers[index].position.copy(newPos);
+        this.helpers[index].lookAt(planeOrientation);
 
         for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
             this.clipAxis[index].stencils[i].position.copy(newPos);
+            this.clipAxis[index].stencils[i].lookAt(planeOrientation);
         }
     }
 
     setNormal = (index, normal) => {
         this.clipPlanes[index].normal = normal;
         this.uiCallback(index, normal.toArray());
+
+        const direction = normal.clone();
+        const newPos = direction.multiplyScalar(this.clipPlanes[index].constant);
+        const planeOrientation = newPos.clone().add(direction);
+
+        this.helpers[index].position.copy(newPos);
+        this.helpers[index].lookAt(planeOrientation);
+
+        for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
+            this.clipAxis[index].stencils[i].position.copy(newPos);
+            this.clipAxis[index].stencils[i].lookAt(planeOrientation);
+        }
     };
 }
 
