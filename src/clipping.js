@@ -62,14 +62,14 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group) {
     return group;
 }
 
-function flatten(parts) {
+function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 0]]) {
     let flatList = [];
     for (let part of parts) {
         if (part.hasOwnProperty("parts")) {
-            flatList = flatList.concat(flatten(part.parts));
+            flatList = flatList.concat(flatten(part.parts, part.loc));
         }
         else {
-            flatList.push(part);
+            flatList.push([part, loc]);
         }
     }
     return flatList;
@@ -90,6 +90,12 @@ function createPlaneHelper(normal, distance, size, color) {
     plane.lookAt(normal);
     plane.position.copy(normal.clone().multiplyScalar(distance));
     return plane;
+}
+
+function LocToQat(loc) {
+    const pos = new THREE.Vector3(...loc[0]);
+    const rot = new THREE.Quaternion(...loc[1]);
+    return [pos, rot];
 }
 
 class Clipping {
@@ -121,8 +127,9 @@ class Clipping {
 
         let parts = flatten(nestedGroup.shapes.parts);
 
-        for (let part of parts) {
+        for (let [part, loc] of parts) {
 
+            const [pos, rot] = LocToQat(loc);
             let shape = part.shape;
             let geometry;
             try {
@@ -137,7 +144,10 @@ class Clipping {
 
             for (let i = 0; i < 3; i++) {
 
-                const poGroup = new THREE.Group();
+                let poGroup = new THREE.Group();
+                poGroup.position.copy(pos);
+                poGroup.quaternion.copy(rot);
+
                 const plane = this.clipPlanes[i];
                 const otherPlanes = this.clipPlanes.filter((_, j) => j !== i);
 
@@ -162,9 +172,7 @@ class Clipping {
                 const po = new THREE.Mesh(planeGeom, planeMat);
                 po.lookAt(plane.normal.clone().negate());
                 po.onAfterRender = function(renderer) {
-
                     renderer.clearStencil();
-
                 };
 
                 po.renderOrder = i + 1.1;
@@ -176,7 +184,6 @@ class Clipping {
         }
 
         this.clippedFaces = stencilGroup;
-        console.log(this.clipAxis);
     }
 
 
