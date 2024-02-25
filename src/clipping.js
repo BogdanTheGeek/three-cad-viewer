@@ -73,7 +73,12 @@ function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 1]]) {
     let flatList = [];
     for (let part of parts) {
         if (part.hasOwnProperty("parts")) {
-            flatList = flatList.concat(flatten(part.parts, part.loc));
+            const [oldPos, oldRot] = LocToQat(loc);
+            const [pos, rot] = LocToQat(part.loc);
+            const newPos = oldPos.clone().add(pos.clone().applyQuaternion(oldRot));
+            const newRot = oldRot.clone().multiply(rot);
+            const newLoc = [newPos.toArray(), newRot.toArray()];
+            flatList = flatList.concat(flatten(part.parts, newLoc));
         }
         else {
             flatList.push([part, loc]);
@@ -172,6 +177,7 @@ class Clipping {
                         stencilFail: THREE.ReplaceStencilOp,
                         stencilZFail: THREE.ReplaceStencilOp,
                         stencilZPass: THREE.ReplaceStencilOp,
+                        side: THREE.DoubleSide
 
                     });
                 const po = new THREE.Mesh(planeGeom, planeMat);
@@ -194,6 +200,8 @@ class Clipping {
 
     setConstant(index, value) {
         this.clipPlanes[index].constant = value;
+
+        if (Math.abs(value) < 1e-8) value = 1e-8;
 
         const direction = this.clipPlanes[index].normal.clone();
         const newPos = direction.multiplyScalar(-value);
