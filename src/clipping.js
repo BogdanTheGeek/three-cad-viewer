@@ -1,125 +1,175 @@
 import * as THREE from "three";
 
-class PlaneHelper extends THREE.Line {
-  constructor(index, plane, center, size = 1, hex = 0xffff00) {
-    const color = hex;
 
-    const positions = [-1, -1, 1, -1, 1, 1, 1, 1, 1, 1, -1, 1, -1, -1, 1];
+function ShapeToBufferGeometry(shape) {
+    const positions =
+        shape.vertices instanceof Float32Array
+            ? shape.vertices
+            : new Float32Array(shape.vertices.flat());
+    const normals =
+        shape.normals instanceof Float32Array
+            ? shape.normals
+            : new Float32Array(shape.normals.flat());
+    const triangles =
+        shape.triangles instanceof Uint32Array
+            ? shape.triangles
+            : new Uint32Array(shape.triangles.flat());
 
-    const geometry = new THREE.BufferGeometry();
+    var geometry = new THREE.BufferGeometry();
     geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
+        "position",
+        new THREE.BufferAttribute(positions, 3),
     );
-    geometry.computeBoundingSphere();
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+    geometry.setIndex(new THREE.BufferAttribute(triangles, 1));
 
-    super(
-      geometry,
-      new THREE.LineBasicMaterial({ color: color, toneMapped: false }),
-    );
+    return geometry;
+}
 
-    this.type = "PlaneHelper";
-    this.index = index;
+function createPlaneStencilGroup(geometry, plane, renderOrder, group) {
 
-    this.plane = plane;
-    this.size = size;
-    this.center = center;
+    const baseMat = new THREE.MeshBasicMaterial();
+    baseMat.depthWrite = false;
+    baseMat.depthTest = false;
+    baseMat.colorWrite = false;
+    baseMat.stencilWrite = true;
+    baseMat.stencilFunc = THREE.AlwaysStencilFunc;
 
-    const positions2 = [
-      1, 1, 1, -1, 1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1, 1, -1, 1,
-    ];
-    const geometry2 = new THREE.BufferGeometry();
-    geometry2.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions2, 3),
-    );
-    geometry2.computeBoundingSphere();
+    // back faces
+    const mat0 = baseMat.clone();
+    mat0.side = THREE.BackSide;
+    mat0.clippingPlanes = [plane];
+    mat0.stencilFail = THREE.IncrementWrapStencilOp;
+    mat0.stencilZFail = THREE.IncrementWrapStencilOp;
+    mat0.stencilZPass = THREE.IncrementWrapStencilOp;
 
-    this.planeMesh = new THREE.Mesh(
-      geometry2,
-      new THREE.MeshBasicMaterial({
-        color: color,
-        opacity: 0.05,
-        transparent: true,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    );
-    this.add(this.planeMesh);
-  }
+    const mesh0 = new THREE.Mesh(geometry, mat0);
+    mesh0.renderOrder = renderOrder;
+    group.add(mesh0);
 
-  updateMatrixWorld(force) {
-    let scale = -this.plane.constant;
+    // front faces
+    const mat1 = baseMat.clone();
+    mat1.side = THREE.FrontSide;
+    mat1.clippingPlanes = [plane];
+    mat1.stencilFail = THREE.DecrementWrapStencilOp;
+    mat1.stencilZFail = THREE.DecrementWrapStencilOp;
+    mat1.stencilZPass = THREE.DecrementWrapStencilOp;
 
-    if (Math.abs(scale) < 1e-8) scale = 1e-8; // sign does not matter
+    const mesh1 = new THREE.Mesh(geometry, mat1);
+    mesh1.renderOrder = renderOrder;
 
-    this.scale.set(0.5 * this.size, 0.5 * this.size, scale);
+    group.add(mesh1);
+    return group;
+}
 
-    // this.children[0].material.side = (scale < 0) ? THREE.BackSide : THREE.FrontSide; // renderer flips side when determinant < 0; flipping not wanted here
-    this.children[0].material.side = THREE.DoubleSide;
-    this.lookAt(this.plane.normal);
-
-    super.updateMatrixWorld(force);
-  }
+function flatten(parts) {
+    let flatList = [];
+    for (let part of parts) {
+        if (part.hasOwnProperty("parts")) {
+            flatList = flatList.concat(flatten(part.parts));
+        }
+        else {
+            flatList.push(part);
+        }
+    }
+    return flatList;
 }
 
 class Clipping {
-  constructor(center, size, distance, uiCallback, theme) {
-    this.distance = distance;
-    this.uiCallback = uiCallback;
 
-    const normals = [
-      new THREE.Vector3(-1, 0, 0),
-      new THREE.Vector3(0, -1, 0),
-      new THREE.Vector3(0, 0, -1),
-    ];
+    constructor(center, size, distance, uiCallback, theme, nestedGroup, scene) {
+        this.distance = distance;
+        this.uiCallback = uiCallback;
 
-    this.clipPlanes = [];
+        const normals = [
+            new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(0, -1, 0),
+            new THREE.Vector3(0, 0, -1)
+        ];
 
-    for (var i = 0; i < 3; i++) {
-      this.clipPlanes.push(new THREE.Plane(normals[i], distance));
-      this.uiCallback(i, normals[i].toArray());
+        this.clipPlanes = [];
+        this.clipAxis = [];
+
+        for (var i = 0; i < 3; i++) {
+            this.clipPlanes.push(new THREE.Plane(normals[i], distance));
+            this.clipAxis.push({ stencils: [] });
+            this.uiCallback(i, normals[i].toArray());
+        }
+
+        let object = new THREE.Object3D();
+        let stencilGroup = new THREE.Group();
+
+        let parts = flatten(nestedGroup.shapes.parts);
+
+        for (let part of parts) {
+
+            let shape = part.shape;
+            let geometry = ShapeToBufferGeometry(shape);
+            for (let i = 0; i < 3; i++) {
+                const plane = this.clipPlanes[i];
+                stencilGroup = createPlaneStencilGroup(geometry, plane, i + 1, stencilGroup);
+            }
+
+            const planeGeom = new THREE.PlaneGeometry(size, size);
+
+            for (let i = 0; i < 3; i++) {
+
+                const poGroup = new THREE.Group();
+                const plane = this.clipPlanes[i];
+                const otherPlanes = this.clipPlanes.filter((_, j) => j !== i);
+
+                // plane is clipped by the other clipping planes
+                const planeMat =
+                    new THREE.MeshStandardMaterial({
+
+                        color: part.color,
+                        metalness: 0.1,
+                        roughness: 0.75,
+                        clippingPlanes: otherPlanes,
+
+                        stencilWrite: true,
+                        stencilRef: 0,
+                        stencilFunc: THREE.NotEqualStencilFunc,
+                        stencilFail: THREE.ReplaceStencilOp,
+                        stencilZFail: THREE.ReplaceStencilOp,
+                        stencilZPass: THREE.ReplaceStencilOp,
+
+                    });
+                const po = new THREE.Mesh(planeGeom, planeMat);
+                po.lookAt(plane.normal.clone().negate());
+                po.onAfterRender = function(renderer) {
+
+                    renderer.clearStencil();
+
+                };
+
+                po.renderOrder = i + 1.1;
+
+                poGroup.add(po);
+                this.clipAxis[i].stencils.push(po);
+                scene.add(poGroup);
+            }
+        }
+        object.add(stencilGroup);
+
+        this.planeHelpers = object;
+        this.clippedFaces = stencilGroup;
     }
 
-    this.planeHelpers = new THREE.Group();
-    this.planeHelpers.add(
-      new PlaneHelper(
-        0,
-        this.clipPlanes[0],
-        center,
-        size,
-        theme === "light" ? 0xff0000 : 0xff4500,
-      ),
-    );
-    this.planeHelpers.add(
-      new PlaneHelper(
-        1,
-        this.clipPlanes[1],
-        center,
-        size,
-        theme === "light" ? 0x00ff00 : 0x32cd32,
-      ),
-    );
-    this.planeHelpers.add(
-      new PlaneHelper(
-        2,
-        this.clipPlanes[2],
-        center,
-        size,
-        theme === "light" ? 0x0000ff : 0x3b9eff,
-      ),
-    );
-    this.planeHelpers.visible = false;
-  }
 
-  setConstant(index, value) {
-    this.clipPlanes[index].constant = value;
-  }
+    setConstant(index, value) {
+        this.clipPlanes[index].constant = value;
+        for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
+            this.clipAxis[index].stencils[i].position
+                .copy(this.clipPlanes[index].normal)
+                .multiplyScalar(-value);
+        }
+    }
 
-  setNormal = (index, normal) => {
-    this.clipPlanes[index].normal = normal;
-    this.uiCallback(index, normal.toArray());
-  };
+    setNormal = (index, normal) => {
+        this.clipPlanes[index].normal = normal;
+        this.uiCallback(index, normal.toArray());
+    };
 }
 
 export { Clipping };

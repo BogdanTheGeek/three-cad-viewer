@@ -961,6 +961,8 @@ class Viewer {
       this.gridSize / 2,
       (index, normal) => this.display.setNormalLabel(index, normal),
       this.theme,
+      this.nestedGroup,
+      this.scene
     );
 
     this.display.setSliderLimits(this.gridSize / 2);
@@ -980,6 +982,7 @@ class Viewer {
     this.setClipPlaneHelpersCheck(options.clipPlaneHelpers);
 
     this.scene.add(this.clipping.planeHelpers);
+    this.scene.add(this.clipping.clippedFaces);
     this.nestedGroup.setClipPlanes(this.clipping.clipPlanes);
 
     this.setLocalClipping(false); // only allow clipping when Clipping tab is selected
