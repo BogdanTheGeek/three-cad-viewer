@@ -983,6 +983,7 @@ class Viewer {
 
     this.scene.add(this.clipping.planeHelpers);
     this.scene.add(this.clipping.clippedFaces);
+    this.clipping.planeHelpers.visible = false;
     this.nestedGroup.setClipPlanes(this.clipping.clipPlanes);
 
     this.setLocalClipping(false); // only allow clipping when Clipping tab is selected

@@ -72,7 +72,7 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group, loc) {
 function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 1]]) {
     let flatList = [];
     for (let part of parts) {
-        if (part.hasOwnProperty("parts")) {
+        if (Object.hasOwn(part, "parts")) {
             const [oldPos, oldRot] = LocToQat(loc);
             const [pos, rot] = LocToQat(part.loc);
             const newPos = oldPos.clone().add(pos.clone().applyQuaternion(oldRot));
@@ -197,15 +197,25 @@ class Clipping {
         this.clippedFaces = stencilGroup;
     }
 
-
     setConstant(index, value) {
+        const normal = this.clipPlanes[index].normal.clone();
+        this.setPlaneOrientation(index, normal, value, -1);
+    }
+
+    setNormal(index, normal) {
+        const value = this.clipPlanes[index].constant;
+        this.setPlaneOrientation(index, normal, value, 1);
+        this.uiCallback(index, normal.toArray());
+    }
+
+    setPlaneOrientation(index, normal, value, dir = 1) {
+        this.clipPlanes[index].normal = normal;
         this.clipPlanes[index].constant = value;
 
         if (Math.abs(value) < 1e-8) value = 1e-8;
 
-        const direction = this.clipPlanes[index].normal.clone();
-        const newPos = direction.multiplyScalar(-value);
-
+        const direction = normal.clone();
+        const newPos = direction.multiplyScalar(value * dir);
         const planeOrientation = newPos.clone().add(direction);
 
         this.helpers[index].position.copy(newPos);
@@ -216,23 +226,7 @@ class Clipping {
             this.clipAxis[index].stencils[i].lookAt(planeOrientation);
         }
     }
-
-    setNormal = (index, normal) => {
-        this.clipPlanes[index].normal = normal;
-        this.uiCallback(index, normal.toArray());
-
-        const direction = normal.clone();
-        const newPos = direction.multiplyScalar(this.clipPlanes[index].constant);
-        const planeOrientation = newPos.clone().add(direction);
-
-        this.helpers[index].position.copy(newPos);
-        this.helpers[index].lookAt(planeOrientation);
-
-        for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
-            this.clipAxis[index].stencils[i].position.copy(newPos);
-            this.clipAxis[index].stencils[i].lookAt(planeOrientation);
-        }
-    };
 }
+
 
 export { Clipping };
