@@ -26,7 +26,10 @@ function ShapeToBufferGeometry(shape) {
     return geometry;
 }
 
-function createPlaneStencilGroup(geometry, plane, renderOrder, group) {
+function createPlaneStencilGroup(geometry, plane, renderOrder, group, loc) {
+
+
+    const [pos, rot] = LocToQat(loc);
 
     const baseMat = new THREE.MeshBasicMaterial();
     baseMat.depthWrite = false;
@@ -44,6 +47,8 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group) {
     mat0.stencilZPass = THREE.IncrementWrapStencilOp;
 
     const mesh0 = new THREE.Mesh(geometry, mat0);
+    mesh0.position.copy(pos);
+    mesh0.quaternion.copy(rot);
     mesh0.renderOrder = renderOrder;
     group.add(mesh0);
 
@@ -56,6 +61,8 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group) {
     mat1.stencilZPass = THREE.DecrementWrapStencilOp;
 
     const mesh1 = new THREE.Mesh(geometry, mat1);
+    mesh1.position.copy(pos);
+    mesh1.quaternion.copy(rot);
     mesh1.renderOrder = renderOrder;
 
     group.add(mesh1);
@@ -109,6 +116,7 @@ class Clipping {
             new THREE.Vector3(0, -1, 0),
             new THREE.Vector3(0, 0, -1)
         ];
+        const axisColors = [0xff0000, 0x00ff00, 0x0000ff];
 
         this.clipPlanes = [];
         this.clipAxis = [];
@@ -128,8 +136,6 @@ class Clipping {
         let parts = flatten(nestedGroup.shapes.parts);
 
         for (let [part, loc] of parts) {
-
-            const [pos, rot] = LocToQat(loc);
             let shape = part.shape;
             let geometry;
             try {
@@ -145,18 +151,17 @@ class Clipping {
             for (let i = 0; i < 3; i++) {
 
                 let poGroup = new THREE.Group();
-                poGroup.position.copy(pos);
-                poGroup.quaternion.copy(rot);
 
                 const plane = this.clipPlanes[i];
                 const otherPlanes = this.clipPlanes.filter((_, j) => j !== i);
 
-                stencilGroup = createPlaneStencilGroup(geometry, plane, i + 1, stencilGroup);
+                stencilGroup = createPlaneStencilGroup(geometry, plane, i + 1, stencilGroup, loc);
 
                 const planeMat =
                     new THREE.MeshStandardMaterial({
 
-                        color: part.color,
+                        color: axisColors[i],
+                        //color: part.color,
                         metalness: 0.1,
                         roughness: 0.75,
                         clippingPlanes: otherPlanes,
