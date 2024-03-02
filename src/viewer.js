@@ -803,7 +803,6 @@ class Viewer {
     this.lastBbox = null;
 
     this.nestedGroup = group;
-    this.scene.add(this.nestedGroup.render(states));
 
     this.nestedGroup.setTransparent(this.transparent);
     this.nestedGroup.setBlackEdges(this.blackEdges);
@@ -964,6 +963,8 @@ class Viewer {
       this.nestedGroup,
       this.scene
     );
+    
+    this.scene.add(this.nestedGroup.render(states));
 
     this.display.setSliderLimits(this.gridSize / 2);
 
@@ -982,7 +983,6 @@ class Viewer {
     this.setClipPlaneHelpersCheck(options.clipPlaneHelpers);
 
     this.scene.add(this.clipping.planeHelpers);
-    this.scene.add(this.clipping.clippedFaces);
     this.clipping.planeHelpers.visible = false;
     this.nestedGroup.setClipPlanes(this.clipping.clipPlanes);
 

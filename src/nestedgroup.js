@@ -190,6 +190,8 @@ class NestedGroup {
       renderback,
     );
 
+   const visible = states[0] == 1;
+
     path = path + this.delim + name;
     this.groups[path.replaceAll(this.delim, "/")] = group;
     group.name = path;
@@ -226,7 +228,7 @@ class NestedGroup {
       depthTest: true,
       clipIntersection: false,
       side: THREE.FrontSide,
-      visible: states[0] == 1,
+      visible: visible,
     });
 
     const backMaterial = new THREE.MeshBasicMaterial({
@@ -242,7 +244,7 @@ class NestedGroup {
       // but keep depth test
       depthTest: true,
       clipIntersection: false,
-      visible: states[0] == 1 && (renderback || this.backVisible),
+      visible: visible && (renderback || this.backVisible),
     });
 
     const front = new THREE.Mesh(shapeGeometry, frontMaterial);
@@ -257,8 +259,16 @@ class NestedGroup {
       front.renderOrder = 999;
     }
 
-    group.addType(back, "back");
-    group.addType(front, "front");
+     group.addType(back, "back");
+     group.addType(front, "front");
+
+     if('stencilGroup' in shape && visible) {
+        group.add(shape.stencilGroup);
+     }
+
+     if ('clipping' in shape && visible) {
+        group.add(shape.clipping);
+     }
 
     if (this.normalLen > 0) {
       const normalsHelper = new VertexNormalsHelper(

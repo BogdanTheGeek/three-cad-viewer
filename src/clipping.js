@@ -47,9 +47,9 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group, loc) {
     mat0.stencilZPass = THREE.IncrementWrapStencilOp;
 
     const mesh0 = new THREE.Mesh(geometry, mat0);
-    mesh0.position.copy(pos);
-    mesh0.quaternion.copy(rot);
-    mesh0.renderOrder = renderOrder;
+    //mesh0.position.copy(pos);
+    //mesh0.quaternion.copy(rot);
+    //mesh0.renderOrder = renderOrder;
     group.add(mesh0);
 
     // front faces
@@ -61,9 +61,9 @@ function createPlaneStencilGroup(geometry, plane, renderOrder, group, loc) {
     mat1.stencilZPass = THREE.DecrementWrapStencilOp;
 
     const mesh1 = new THREE.Mesh(geometry, mat1);
-    mesh1.position.copy(pos);
-    mesh1.quaternion.copy(rot);
-    mesh1.renderOrder = renderOrder;
+    //mesh1.position.copy(pos);
+    //mesh1.quaternion.copy(rot);
+    //mesh1.renderOrder = renderOrder;
 
     group.add(mesh1);
     return group;
@@ -81,7 +81,7 @@ function flatten(parts, loc = [[0, 0, 0], [0, 0, 0, 1]]) {
             flatList = flatList.concat(flatten(part.parts, newLoc));
         }
         else {
-            flatList.push([part, loc]);
+            flatList.push([part, part.loc ? part.loc : loc]);
         }
     }
     return flatList;
@@ -130,15 +130,15 @@ class Clipping {
 
         for (var i = 0; i < 3; i++) {
             this.clipPlanes.push(new THREE.Plane(normals[i], distance));
-            this.clipAxis.push({ stencils: [] });
+            this.clipAxis.push({ stencils: [], pos: [], rot: [] });
             this.uiCallback(i, normals[i].toArray());
             this.helpers.push(createPlaneHelper(normals[i], distance, size, 0xeeeeee));
             this.planeHelpers.add(this.helpers[i]);
         }
 
-        let stencilGroup = new THREE.Group();
-
+        console.log("nestedGroup", nestedGroup);
         let parts = flatten(nestedGroup.shapes.parts);
+        console.log("parts", parts);
 
         for (let [part, loc] of parts) {
             let shape = part.shape;
@@ -151,12 +151,14 @@ class Clipping {
                 continue;
             }
 
+            const [pos, rot] = LocToQat(loc);
+
             const planeGeom = new THREE.PlaneGeometry(size, size);
 
+            let stencilGroup = new THREE.Group();
+            let poGroup = new THREE.Group();
+
             for (let i = 0; i < 3; i++) {
-
-                let poGroup = new THREE.Group();
-
                 const plane = this.clipPlanes[i];
                 const otherPlanes = this.clipPlanes.filter((_, j) => j !== i);
 
@@ -165,8 +167,8 @@ class Clipping {
                 const planeMat =
                     new THREE.MeshStandardMaterial({
 
-                        color: axisColors[i],
-                        //color: part.color,
+                        //color: axisColors[i],
+                        color: part.color,
                         metalness: 0.1,
                         roughness: 0.75,
                         clippingPlanes: otherPlanes,
@@ -180,21 +182,36 @@ class Clipping {
                         side: THREE.DoubleSide
 
                     });
-                const po = new THREE.Mesh(planeGeom, planeMat);
-                po.lookAt(plane.normal.clone().negate());
+
+                const planeMat2 = new THREE.MeshNormalMaterial({
+                        clippingPlanes: otherPlanes,
+
+                        stencilWrite: true,
+                        stencilRef: 0,
+                        stencilFunc: THREE.NotEqualStencilFunc,
+                        stencilFail: THREE.ReplaceStencilOp,
+                        stencilZFail: THREE.ReplaceStencilOp,
+                        stencilZPass: THREE.ReplaceStencilOp,
+                        side: THREE.DoubleSide
+
+                });
+                const po = new THREE.Mesh(planeGeom, planeMat2);
+                //po.lookAt(plane.normal.clone().negate());
                 po.onAfterRender = function(renderer) {
                     renderer.clearStencil();
                 };
 
-                po.renderOrder = i + 1.1;
+                //po.renderOrder = i + 1.1;
 
                 poGroup.add(po);
                 this.clipAxis[i].stencils.push(po);
-                scene.add(poGroup);
+                this.clipAxis[i].pos.push(pos);
+                this.clipAxis[i].rot.push(rot);
             }
-        }
+            shape.clipping = poGroup;
+            shape.stencilGroup = stencilGroup;
 
-        this.clippedFaces = stencilGroup;
+        }
     }
 
     setConstant(index, value) {
@@ -216,14 +233,26 @@ class Clipping {
 
         const direction = normal.clone();
         const newPos = direction.multiplyScalar(value * dir);
-        const planeOrientation = newPos.clone().add(direction);
+        const planeOrientation = newPos.clone().normalize();
 
         this.helpers[index].position.copy(newPos);
         this.helpers[index].lookAt(planeOrientation);
 
+
         for (let i = 0; i < this.clipAxis[index].stencils.length; i++) {
-            this.clipAxis[index].stencils[i].position.copy(newPos);
+            const pos = this.clipAxis[index].pos[i];
+            const rot = this.clipAxis[index].rot[i];
+            console.log('rot',rot);
+            console.log('i',i);
+            this.clipAxis[index].stencils[i].position.copy(new THREE.Vector3(0,0,0));
+            this.clipAxis[index].stencils[i].quaternion.copy(new THREE.Quaternion(0,0,0,1).multiply(rot));
             this.clipAxis[index].stencils[i].lookAt(planeOrientation);
+            this.clipAxis[index].stencils[i].position.copy(newPos);
+            //this.clipAxis[index].stencils[i].quaternion.multiply(rot.invert());
+            //console.log(".quaternion",this.clipAxis[index].stencils[i].quaternion);
+            //console.log('.position',this.clipAxis[index].stencils[i].position);
+            //console.log('normal',normal);
+            //console.log('pos',pos);
         }
     }
 }
